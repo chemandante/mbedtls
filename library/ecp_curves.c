@@ -5140,6 +5140,99 @@ cleanup:
     return ret;
 }
 
+#if defined(_TMS320C6X)
+
+/*
+ * Matrix to exploit fast method of reduction X modulo P.
+ * Matrix calculation follows as:
+ *
+ * |A0|   |A0|                      | A8|
+ * |A1|   |A1|                      | A9|
+ * |..| = |..| + ecp_mod_p256_idx * |...|
+ * |A6|   |A6|                      |A14|
+ * |A7|   |A7|                      |A15|
+ *
+ * considering the carry between limbs
+ */
+static const int8_t ecp_mod_p256_idx[8][8] = {
+//	   A8   A9  A10  A11  A12  A13  A14  A15
+    {   1,   1,   0,  -1,  -1,  -1,  -1,   0 }, // A0
+    {   0,   1,   1,   0,  -1,  -1,  -1,  -1 }, // A1
+    {   0,   0,   1,   1,   0,  -1,  -1,  -1 }, // A2
+    {  -1,  -1,   0,   2,   2,   1,   0,  -1 }, // A3
+    {   0,  -1,  -1,   0,   2,   2,   1,   0 }, // A4
+    {   0,   0,  -1,  -1,   0,   2,   2,   1 }, // A5
+    {  -1,  -1,   0,   0,   0,   1,   3,   2 }, // A6
+    {   1,   0,  -1,  -1,  -1,  -1,   0,   3 }  // A7
+};
+
+/*
+ * Index table for the last two stages of reduction.
+ * '1' - add last carry to corresponding limb, '-1' - subtract, '0' - skip
+ */
+static const int8_t ecp_mod_p256_idx_last[8] =
+//   A0, A1, A2, A3, A4, A5, A6, A7
+    { 1,  0,  0, -1,  0,  0, -1,  1 };
+
+MBEDTLS_STATIC_TESTABLE
+int mbedtls_ecp_mod_p256_raw(mbedtls_mpi_uint *X, size_t X_limbs)
+{
+    int64_t cur;
+    int     i, c, last_c;
+
+    if (X_limbs != 2 * 256 / biL) {
+        return MBEDTLS_ERR_ECP_BAD_INPUT_DATA;
+    }
+
+    /* Here is the main nested loops:
+     * Outer - for each limb from X[0] to X[7]
+     * Inner accumulates corresponding limbs */
+    for (i = 0, c = 0; i < 8; ++i) {
+        cur = X[i] + c;
+        for (int j = 0; j < 8; ++j) {
+            cur += _mpy32su(ecp_mod_p256_idx[i][j], X[j + 8]);
+        }
+
+        c = extract_carry(cur);
+        X[i] = (mbedtls_mpi_uint) cur;
+    }
+
+    last_c = c;
+
+    /* Use 2^224 * (2^32 - 1) + 2^192 + 2^96 - 1
+     * to modulo reduce the final carry exactly twice,
+     * because after first reduction carry still may be != 0 */
+    for (int j = 0; j < 2; ++j) {
+        for (i = 0, c = 0; i < 8; ++i) {
+            cur = X[i] + c;
+
+            int t = ecp_mod_p256_idx_last[i];
+            if (t > 0) {
+                cur += last_c;
+            } else if (t < 0) {
+                cur -= last_c;
+            }
+
+            c = extract_carry(cur);
+            X[i] = (mbedtls_mpi_uint) cur;
+        }
+
+        last_c = c;
+    }
+
+    if (c != 0) {
+        return MBEDTLS_ERR_ECP_BAD_INPUT_DATA;
+    }
+
+    while (i < MAX32) {
+        STORE0; i++;
+    }
+
+    return 0;
+}
+
+#else
+
 MBEDTLS_STATIC_TESTABLE
 int mbedtls_ecp_mod_p256_raw(mbedtls_mpi_uint *X, size_t X_limbs)
 {
@@ -5203,6 +5296,8 @@ int mbedtls_ecp_mod_p256_raw(mbedtls_mpi_uint *X, size_t X_limbs)
 
     return 0;
 }
+
+#endif /* _TMS320C6X */
 
 #endif /* MBEDTLS_ECP_DP_SECP256R1_ENABLED */
 
