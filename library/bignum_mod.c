@@ -2,24 +2,12 @@
  *  Modular bignum functions
  *
  *  Copyright The Mbed TLS Contributors
- *  SPDX-License-Identifier: Apache-2.0
- *
- *  Licensed under the Apache License, Version 2.0 (the "License"); you may
- *  not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
- *
- *  http://www.apache.org/licenses/LICENSE-2.0
- *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- *  WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
+ *  SPDX-License-Identifier: Apache-2.0 OR GPL-2.0-or-later
  */
 
 #include "common.h"
 
-#if defined(MBEDTLS_BIGNUM_C)
+#if defined(MBEDTLS_BIGNUM_C) && defined(MBEDTLS_ECP_WITH_MPI_UINT)
 
 #include <string.h>
 
@@ -80,15 +68,14 @@ void mbedtls_mpi_mod_modulus_free(mbedtls_mpi_mod_modulus *N)
     switch (N->int_rep) {
         case MBEDTLS_MPI_MOD_REP_MONTGOMERY:
             if (N->rep.mont.rr != NULL) {
-                mbedtls_platform_zeroize((mbedtls_mpi_uint *) N->rep.mont.rr,
+                mbedtls_zeroize_and_free((mbedtls_mpi_uint *) N->rep.mont.rr,
                                          N->limbs * sizeof(mbedtls_mpi_uint));
-                mbedtls_free((mbedtls_mpi_uint *) N->rep.mont.rr);
                 N->rep.mont.rr = NULL;
             }
             N->rep.mont.mm = 0;
             break;
         case MBEDTLS_MPI_MOD_REP_OPT_RED:
-            mbedtls_free(N->rep.ored);
+            N->rep.ored.modp = NULL;
             break;
         case MBEDTLS_MPI_MOD_REP_INVALID:
             break;
@@ -136,39 +123,41 @@ cleanup:
     return ret;
 }
 
-int mbedtls_mpi_mod_modulus_setup(mbedtls_mpi_mod_modulus *N,
-                                  const mbedtls_mpi_uint *p,
-                                  size_t p_limbs,
-                                  mbedtls_mpi_mod_rep_selector int_rep)
+static inline void standard_modulus_setup(mbedtls_mpi_mod_modulus *N,
+                                          const mbedtls_mpi_uint *p,
+                                          size_t p_limbs,
+                                          mbedtls_mpi_mod_rep_selector int_rep)
 {
-    int ret = 0;
-
     N->p = p;
     N->limbs = p_limbs;
     N->bits = mbedtls_mpi_core_bitlen(p, p_limbs);
+    N->int_rep = int_rep;
+}
 
-    switch (int_rep) {
-        case MBEDTLS_MPI_MOD_REP_MONTGOMERY:
-            N->int_rep = int_rep;
-            N->rep.mont.mm = mbedtls_mpi_core_montmul_init(N->p);
-            ret = set_mont_const_square(&N->rep.mont.rr, N->p, N->limbs);
-            break;
-        case MBEDTLS_MPI_MOD_REP_OPT_RED:
-            N->int_rep = int_rep;
-            N->rep.ored = NULL;
-            break;
-        default:
-            ret = MBEDTLS_ERR_MPI_BAD_INPUT_DATA;
-            goto exit;
-    }
-
-exit:
+int mbedtls_mpi_mod_modulus_setup(mbedtls_mpi_mod_modulus *N,
+                                  const mbedtls_mpi_uint *p,
+                                  size_t p_limbs)
+{
+    int ret = 0;
+    standard_modulus_setup(N, p, p_limbs, MBEDTLS_MPI_MOD_REP_MONTGOMERY);
+    N->rep.mont.mm = mbedtls_mpi_core_montmul_init(N->p);
+    ret = set_mont_const_square(&N->rep.mont.rr, N->p, N->limbs);
 
     if (ret != 0) {
         mbedtls_mpi_mod_modulus_free(N);
     }
 
     return ret;
+}
+
+int mbedtls_mpi_mod_optred_modulus_setup(mbedtls_mpi_mod_modulus *N,
+                                         const mbedtls_mpi_uint *p,
+                                         size_t p_limbs,
+                                         mbedtls_mpi_modp_fn modp)
+{
+    standard_modulus_setup(N, p, p_limbs, MBEDTLS_MPI_MOD_REP_OPT_RED);
+    N->rep.ored.modp = modp;
+    return 0;
 }
 
 int mbedtls_mpi_mod_mul(mbedtls_mpi_mod_residue *X,
@@ -235,8 +224,7 @@ static int mbedtls_mpi_mod_inv_non_mont(mbedtls_mpi_mod_residue *X,
     mbedtls_mpi_mod_modulus Nmont;
     mbedtls_mpi_mod_modulus_init(&Nmont);
 
-    MBEDTLS_MPI_CHK(mbedtls_mpi_mod_modulus_setup(&Nmont, N->p, N->limbs,
-                                                  MBEDTLS_MPI_MOD_REP_MONTGOMERY));
+    MBEDTLS_MPI_CHK(mbedtls_mpi_mod_modulus_setup(&Nmont, N->p, N->limbs));
 
     /* We'll use X->p to hold the Montgomery form of the input A->p */
     mbedtls_mpi_core_to_mont_rep(X->p, A->p, Nmont.p, Nmont.limbs,
@@ -294,9 +282,8 @@ int mbedtls_mpi_mod_inv(mbedtls_mpi_mod_residue *X,
             break;
     }
 
-    mbedtls_platform_zeroize(working_memory,
+    mbedtls_zeroize_and_free(working_memory,
                              working_limbs * sizeof(mbedtls_mpi_uint));
-    mbedtls_free(working_memory);
 
     return ret;
 }
@@ -398,11 +385,10 @@ cleanup:
     if (N->int_rep == MBEDTLS_MPI_MOD_REP_MONTGOMERY &&
         working_memory != NULL) {
 
-        mbedtls_platform_zeroize(working_memory, working_memory_len);
-        mbedtls_free(working_memory);
+        mbedtls_zeroize_and_free(working_memory, working_memory_len);
     }
 
     return ret;
 }
 
-#endif /* MBEDTLS_BIGNUM_C */
+#endif /* MBEDTLS_BIGNUM_C && MBEDTLS_ECP_WITH_MPI_UINT */

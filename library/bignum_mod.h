@@ -63,19 +63,7 @@
 
 /*
  *  Copyright The Mbed TLS Contributors
- *  SPDX-License-Identifier: Apache-2.0
- *
- *  Licensed under the Apache License, Version 2.0 (the "License"); you may
- *  not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
- *
- *  http://www.apache.org/licenses/LICENSE-2.0
- *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- *  WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
+ *  SPDX-License-Identifier: Apache-2.0 OR GPL-2.0-or-later
  */
 
 #ifndef MBEDTLS_BIGNUM_MOD_H
@@ -98,10 +86,11 @@ typedef enum {
     /* Skip 1 as it is slightly easier to accidentally pass to functions. */
     /** Montgomery representation. */
     MBEDTLS_MPI_MOD_REP_MONTGOMERY = 2,
-    /** TODO: document this.
-     *
-     * Residues are in canonical representation.
-     */
+    /* Optimised reduction available. This indicates a coordinate modulus (P)
+     * and one or more of the following have been configured:
+     * - A nist curve (MBEDTLS_ECP_DP_SECPXXXR1_ENABLED) & MBEDTLS_ECP_NIST_OPTIM.
+     * - A Kobliz Curve.
+     * - A Fast Reduction Curve CURVE25519 or CURVE448. */
     MBEDTLS_MPI_MOD_REP_OPT_RED,
 } mbedtls_mpi_mod_rep_selector;
 
@@ -123,7 +112,11 @@ typedef struct {
     mbedtls_mpi_uint mm;         /* Montgomery const for -N^{-1} mod 2^{ciL} */
 } mbedtls_mpi_mont_struct;
 
-typedef void *mbedtls_mpi_opt_red_struct;
+typedef int (*mbedtls_mpi_modp_fn)(mbedtls_mpi_uint *X, size_t X_limbs);
+
+typedef struct {
+    mbedtls_mpi_modp_fn modp;    /* The optimised reduction function pointer */
+} mbedtls_mpi_opt_red_struct;
 
 typedef struct {
     const mbedtls_mpi_uint *p;
@@ -197,16 +190,29 @@ void mbedtls_mpi_mod_modulus_init(mbedtls_mpi_mod_modulus *N);
  *                  not be modified in any way until after
  *                  mbedtls_mpi_mod_modulus_free() is called.
  * \param p_limbs   The number of limbs of \p p.
- * \param int_rep   The internal representation to be used for residues
- *                  associated with \p N (see #mbedtls_mpi_mod_rep_selector).
  *
  * \return      \c 0 if successful.
- * \return      #MBEDTLS_ERR_MPI_BAD_INPUT_DATA if \p int_rep is invalid.
  */
 int mbedtls_mpi_mod_modulus_setup(mbedtls_mpi_mod_modulus *N,
                                   const mbedtls_mpi_uint *p,
-                                  size_t p_limbs,
-                                  mbedtls_mpi_mod_rep_selector int_rep);
+                                  size_t p_limbs);
+
+/** Setup an optimised-reduction compatible modulus structure.
+ *
+ * \param[out] N    The address of the modulus structure to populate.
+ * \param[in] p     The address of the limb array storing the value of \p N.
+ *                  The memory pointed to by \p p will be used by \p N and must
+ *                  not be modified in any way until after
+ *                  mbedtls_mpi_mod_modulus_free() is called.
+ * \param p_limbs   The number of limbs of \p p.
+ * \param modp      A pointer to the optimised reduction function to use. \p p.
+ *
+ * \return      \c 0 if successful.
+ */
+int mbedtls_mpi_mod_optred_modulus_setup(mbedtls_mpi_mod_modulus *N,
+                                         const mbedtls_mpi_uint *p,
+                                         size_t p_limbs,
+                                         mbedtls_mpi_modp_fn modp);
 
 /** Free elements of a modulus structure.
  *

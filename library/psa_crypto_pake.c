@@ -3,19 +3,7 @@
  */
 /*
  *  Copyright The Mbed TLS Contributors
- *  SPDX-License-Identifier: Apache-2.0
- *
- *  Licensed under the Apache License, Version 2.0 (the "License"); you may
- *  not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
- *
- *  http://www.apache.org/licenses/LICENSE-2.0
- *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- *  WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
+ *  SPDX-License-Identifier: Apache-2.0 OR GPL-2.0-or-later
  */
 
 #include "common.h"
@@ -28,7 +16,7 @@
 #include "psa_crypto_slot_management.h"
 
 #include <mbedtls/ecjpake.h>
-#include <mbedtls/psa_util.h>
+#include "psa_util_internal.h"
 
 #include <mbedtls/platform.h>
 #include <mbedtls/error.h>
@@ -80,65 +68,37 @@
  */
 
 /*
- * The first PAKE step shares the same sequences of the second PAKE step
- * but with a second set of KEY_SHARE/ZK_PUBLIC/ZK_PROOF outputs/inputs.
- * It's simpler to share the same sequences numbers of the first
- * set of KEY_SHARE/ZK_PUBLIC/ZK_PROOF outputs/inputs in both PAKE steps.
+ * Possible sequence of calls to implementation:
  *
- * State sequence with step, state & sequence enums:
- *   => Input & Output Step = PSA_PAKE_STEP_INVALID
- *   => state = PSA_PAKE_STATE_INVALID
- *   psa_pake_setup()
- *   => Input & Output Step = PSA_PAKE_STEP_X1_X2
- *   => state = PSA_PAKE_STATE_SETUP
- *   => sequence = PSA_PAKE_SEQ_INVALID
- *   |
- *   |--- In any order: (First round input before or after first round output)
- *   |   | First call of psa_pake_output() or psa_pake_input() sets
- *   |   | state = PSA_PAKE_STATE_READY
- *   |   |
- *   |   |------ In Order: => state = PSA_PAKE_OUTPUT_X1_X2
- *   |   |       | psa_pake_output() => sequence = PSA_PAKE_X1_STEP_KEY_SHARE
- *   |   |       | psa_pake_output() => sequence = PSA_PAKE_X1_STEP_ZK_PUBLIC
- *   |   |       | psa_pake_output() => sequence = PSA_PAKE_X1_STEP_ZK_PROOF
- *   |   |       | psa_pake_output() => sequence = PSA_PAKE_X2_STEP_KEY_SHARE
- *   |   |       | psa_pake_output() => sequence = PSA_PAKE_X2_STEP_ZK_PUBLIC
- *   |   |       | psa_pake_output() => sequence = PSA_PAKE_X2_STEP_ZK_PROOF
- *   |   |       | => state = PSA_PAKE_STATE_READY
- *   |   |       | => sequence = PSA_PAKE_SEQ_INVALID
- *   |   |       | => Output Step = PSA_PAKE_STEP_X2S
- *   |   |
- *   |   |------ In Order: => state = PSA_PAKE_INPUT_X1_X2
- *   |   |       | psa_pake_input() => sequence = PSA_PAKE_X1_STEP_KEY_SHARE
- *   |   |       | psa_pake_input() => sequence = PSA_PAKE_X1_STEP_ZK_PUBLIC
- *   |   |       | psa_pake_input() => sequence = PSA_PAKE_X1_STEP_ZK_PROOF
- *   |   |       | psa_pake_input() => sequence = PSA_PAKE_X2_STEP_KEY_SHARE
- *   |   |       | psa_pake_input() => sequence = PSA_PAKE_X2_STEP_ZK_PUBLIC
- *   |   |       | psa_pake_input() => sequence = PSA_PAKE_X2_STEP_ZK_PROOF
- *   |   |       | => state = PSA_PAKE_STATE_READY
- *   |   |       | => sequence = PSA_PAKE_SEQ_INVALID
- *   |   |       | => Output Step = PSA_PAKE_INPUT_X4S
- *   |
- *   |--- In any order: (Second round input before or after second round output)
- *   |   |
- *   |   |------ In Order: => state = PSA_PAKE_OUTPUT_X2S
- *   |   |       | psa_pake_output() => sequence = PSA_PAKE_X1_STEP_KEY_SHARE
- *   |   |       | psa_pake_output() => sequence = PSA_PAKE_X1_STEP_ZK_PUBLIC
- *   |   |       | psa_pake_output() => sequence = PSA_PAKE_X1_STEP_ZK_PROOF
- *   |   |       | => state = PSA_PAKE_STATE_READY
- *   |   |       | => sequence = PSA_PAKE_SEQ_INVALID
- *   |   |       | => Output Step = PSA_PAKE_STEP_DERIVE
- *   |   |
- *   |   |------ In Order: => state = PSA_PAKE_INPUT_X4S
- *   |   |       | psa_pake_input() => sequence = PSA_PAKE_X1_STEP_KEY_SHARE
- *   |   |       | psa_pake_input() => sequence = PSA_PAKE_X1_STEP_ZK_PUBLIC
- *   |   |       | psa_pake_input() => sequence = PSA_PAKE_X1_STEP_ZK_PROOF
- *   |   |       | => state = PSA_PAKE_STATE_READY
- *   |   |       | => sequence = PSA_PAKE_SEQ_INVALID
- *   |   |       | => Output Step = PSA_PAKE_STEP_DERIVE
- *   |
- *   psa_pake_get_implicit_key()
- *   => Input & Output Step = PSA_PAKE_STEP_INVALID
+ * |--- In any order:
+ * |   |
+ * |   |------ In Order
+ * |   |       | mbedtls_psa_pake_output(PSA_JPAKE_X1_STEP_KEY_SHARE)
+ * |   |       | mbedtls_psa_pake_output(PSA_JPAKE_X1_STEP_ZK_PUBLIC)
+ * |   |       | mbedtls_psa_pake_output(PSA_JPAKE_X1_STEP_ZK_PROOF)
+ * |   |       | mbedtls_psa_pake_output(PSA_JPAKE_X2_STEP_KEY_SHARE)
+ * |   |       | mbedtls_psa_pake_output(PSA_JPAKE_X2_STEP_ZK_PUBLIC)
+ * |   |       | mbedtls_psa_pake_output(PSA_JPAKE_X2_STEP_ZK_PROOF)
+ * |   |
+ * |   |------ In Order:
+ * |           | mbedtls_psa_pake_input(PSA_JPAKE_X1_STEP_KEY_SHARE)
+ * |           | mbedtls_psa_pake_input(PSA_JPAKE_X1_STEP_ZK_PUBLIC)
+ * |           | mbedtls_psa_pake_input(PSA_JPAKE_X1_STEP_ZK_PROOF)
+ * |           | mbedtls_psa_pake_input(PSA_JPAKE_X2_STEP_KEY_SHARE)
+ * |           | mbedtls_psa_pake_input(PSA_JPAKE_X2_STEP_ZK_PUBLIC)
+ * |           | mbedtls_psa_pake_input(PSA_JPAKE_X2_STEP_ZK_PROOF)
+ * |
+ * |--- In any order:
+ * |   |
+ * |   |------ In Order
+ * |   |       | mbedtls_psa_pake_output(PSA_JPAKE_X2S_STEP_KEY_SHARE)
+ * |   |       | mbedtls_psa_pake_output(PSA_JPAKE_X2S_STEP_ZK_PUBLIC)
+ * |   |       | mbedtls_psa_pake_output(PSA_JPAKE_X2S_STEP_ZK_PROOF)
+ * |   |
+ * |   |------ In Order:
+ * |           | mbedtls_psa_pake_input(PSA_JPAKE_X4S_STEP_KEY_SHARE)
+ * |           | mbedtls_psa_pake_input(PSA_JPAKE_X4S_STEP_ZK_PUBLIC)
+ * |           | mbedtls_psa_pake_input(PSA_JPAKE_X4S_STEP_ZK_PROOF)
  */
 
 #if defined(MBEDTLS_PSA_BUILTIN_ALG_JPAKE)
@@ -206,12 +166,12 @@ psa_status_t mbedtls_psa_pake_setup(mbedtls_psa_pake_operation_t *operation,
         return status;
     }
 
-    psa_crypto_driver_pake_get_user_len(inputs, &user_len);
+    status = psa_crypto_driver_pake_get_user_len(inputs, &user_len);
     if (status != PSA_SUCCESS) {
         return status;
     }
 
-    psa_crypto_driver_pake_get_peer_len(inputs, &peer_len);
+    status = psa_crypto_driver_pake_get_peer_len(inputs, &peer_len);
     if (status != PSA_SUCCESS) {
         return status;
     }
@@ -332,10 +292,10 @@ static psa_status_t mbedtls_psa_pake_output_internal(
 
 #if defined(MBEDTLS_PSA_BUILTIN_ALG_JPAKE)
     /*
-     * The PSA CRYPTO PAKE and MbedTLS JPAKE API have a different
+     * The PSA CRYPTO PAKE and Mbed TLS JPAKE API have a different
      * handling of output sequencing.
      *
-     * The MbedTLS JPAKE API outputs the whole X1+X2 and X2S steps data
+     * The Mbed TLS JPAKE API outputs the whole X1+X2 and X2S steps data
      * at once, on the other side the PSA CRYPTO PAKE api requires
      * the KEY_SHARE/ZP_PUBLIC/ZK_PROOF parts of X1, X2 & X2S to be
      * retrieved in sequence.
@@ -451,17 +411,17 @@ static psa_status_t mbedtls_psa_pake_input_internal(
 
 #if defined(MBEDTLS_PSA_BUILTIN_ALG_JPAKE)
     /*
-     * The PSA CRYPTO PAKE and MbedTLS JPAKE API have a different
+     * The PSA CRYPTO PAKE and Mbed TLS JPAKE API have a different
      * handling of input sequencing.
      *
-     * The MbedTLS JPAKE API takes the whole X1+X2 or X4S steps data
+     * The Mbed TLS JPAKE API takes the whole X1+X2 or X4S steps data
      * at once as input, on the other side the PSA CRYPTO PAKE api requires
      * the KEY_SHARE/ZP_PUBLIC/ZK_PROOF parts of X1, X2 & X4S to be
      * given in sequence.
      *
      * In order to achieve API compatibility, each X1+X2 or X4S step data
      * is stored sequentially in an intermediate buffer and given to the
-     * MbedTLS JPAKE API on the last step.
+     * Mbed TLS JPAKE API on the last step.
      *
      * This causes any input error to be only detected on the last step.
      */
@@ -587,8 +547,7 @@ psa_status_t mbedtls_psa_pake_get_implicit_key(
 
 psa_status_t mbedtls_psa_pake_abort(mbedtls_psa_pake_operation_t *operation)
 {
-    mbedtls_platform_zeroize(operation->password, operation->password_len);
-    mbedtls_free(operation->password);
+    mbedtls_zeroize_and_free(operation->password, operation->password_len);
     operation->password = NULL;
     operation->password_len = 0;
 

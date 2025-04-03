@@ -3,26 +3,13 @@
  */
 /*
  *  Copyright The Mbed TLS Contributors
- *  SPDX-License-Identifier: Apache-2.0
- *
- *  Licensed under the Apache License, Version 2.0 (the "License"); you may
- *  not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
- *
- *  http://www.apache.org/licenses/LICENSE-2.0
- *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- *  WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
+ *  SPDX-License-Identifier: Apache-2.0 OR GPL-2.0-or-later
  */
 
 #ifndef PSA_CRYPTO_FFDH_H
 #define PSA_CRYPTO_FFDH_H
 
 #include <psa/crypto.h>
-#include <mbedtls/dhm.h>
 
 /** Perform a key agreement and return the FFDH shared secret.
  *
@@ -47,10 +34,10 @@
  * \retval #PSA_ERROR_INVALID_ARGUMENT
  *         \p key_buffer_size, \p peer_key_length, \p shared_secret_size
  *         do not match
- * \retval #PSA_ERROR_INSUFFICIENT_MEMORY
- * \retval #PSA_ERROR_CORRUPTION_DETECTED
+ * \retval #PSA_ERROR_INSUFFICIENT_MEMORY   \emptydescription
+ * \retval #PSA_ERROR_CORRUPTION_DETECTED   \emptydescription
  */
-psa_status_t mbedtls_psa_key_agreement_ffdh(
+psa_status_t mbedtls_psa_ffdh_key_agreement(
     const psa_key_attributes_t *attributes,
     const uint8_t *peer_key,
     size_t peer_key_length,
@@ -73,11 +60,11 @@ psa_status_t mbedtls_psa_key_agreement_ffdh(
  * \retval #PSA_SUCCESS  The public key was exported successfully.
  * \retval #PSA_ERROR_BUFFER_TOO_SMALL
  *         The size of \p key_buffer is too small.
- * \retval #PSA_ERROR_NOT_PERMITTED
- * \retval #PSA_ERROR_INSUFFICIENT_MEMORY
- * \retval #PSA_ERROR_CORRUPTION_DETECTED
+ * \retval #PSA_ERROR_NOT_PERMITTED         \emptydescription
+ * \retval #PSA_ERROR_INSUFFICIENT_MEMORY   \emptydescription
+ * \retval #PSA_ERROR_CORRUPTION_DETECTED   \emptydescription
  */
-psa_status_t mbedtls_psa_export_ffdh_public_key(
+psa_status_t mbedtls_psa_ffdh_export_public_key(
     const psa_key_attributes_t *attributes,
     const uint8_t *key_buffer,
     size_t key_buffer_size,
@@ -103,8 +90,8 @@ psa_status_t mbedtls_psa_export_ffdh_public_key(
  *         Key size in bits is invalid.
  * \retval #PSA_ERROR_BUFFER_TOO_SMALL
  *         The size of \p key_buffer is too small.
- * \retval #PSA_ERROR_INSUFFICIENT_MEMORY
- * \retval #PSA_ERROR_CORRUPTION_DETECTED
+ * \retval #PSA_ERROR_INSUFFICIENT_MEMORY   \emptydescription
+ * \retval #PSA_ERROR_CORRUPTION_DETECTED   \emptydescription
  */
 psa_status_t mbedtls_psa_ffdh_generate_key(
     const psa_key_attributes_t *attributes,

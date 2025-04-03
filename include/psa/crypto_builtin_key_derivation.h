@@ -15,19 +15,7 @@
  */
 /*
  *  Copyright The Mbed TLS Contributors
- *  SPDX-License-Identifier: Apache-2.0
- *
- *  Licensed under the Apache License, Version 2.0 (the "License"); you may
- *  not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
- *
- *  http://www.apache.org/licenses/LICENSE-2.0
- *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- *  WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
+ *  SPDX-License-Identifier: Apache-2.0 OR GPL-2.0-or-later
  */
 
 #ifndef PSA_CRYPTO_BUILTIN_KEY_DERIVATION_H
@@ -105,7 +93,7 @@ typedef struct psa_tls12_prf_key_derivation_s {
 } psa_tls12_prf_key_derivation_t;
 #endif /* MBEDTLS_PSA_BUILTIN_ALG_TLS12_PRF) ||
         * MBEDTLS_PSA_BUILTIN_ALG_TLS12_PSK_TO_MS */
-#if defined(MBEDTLS_PSA_BUILTIN_ALG_PBKDF2_HMAC)
+#if defined(PSA_HAVE_SOFT_PBKDF2)
 typedef enum {
     PSA_PBKDF2_STATE_INIT,             /* no input provided */
     PSA_PBKDF2_STATE_INPUT_COST_SET,   /* input cost has been set */
@@ -121,7 +109,10 @@ typedef struct {
     size_t MBEDTLS_PRIVATE(salt_length);
     uint8_t MBEDTLS_PRIVATE(password)[PSA_HMAC_MAX_HASH_BLOCK_SIZE];
     size_t MBEDTLS_PRIVATE(password_length);
+    uint8_t MBEDTLS_PRIVATE(output_block)[PSA_HASH_MAX_SIZE];
+    uint8_t MBEDTLS_PRIVATE(bytes_used);
+    uint32_t MBEDTLS_PRIVATE(block_number);
 } psa_pbkdf2_key_derivation_t;
-#endif /* MBEDTLS_PSA_BUILTIN_ALG_PBKDF2_HMAC */
+#endif /* PSA_HAVE_SOFT_PBKDF2 */
 
 #endif /* PSA_CRYPTO_BUILTIN_KEY_DERIVATION_H */

@@ -9,19 +9,7 @@
  */
 /*
  *  Copyright The Mbed TLS Contributors
- *  SPDX-License-Identifier: Apache-2.0
- *
- *  Licensed under the Apache License, Version 2.0 (the "License"); you may
- *  not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
- *
- *  http://www.apache.org/licenses/LICENSE-2.0
- *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- *  WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
+ *  SPDX-License-Identifier: Apache-2.0 OR GPL-2.0-or-later
  */
 #ifndef MBEDTLS_ECP_INVASIVE_H
 #define MBEDTLS_ECP_INVASIVE_H
@@ -31,7 +19,29 @@
 #include "bignum_mod.h"
 #include "mbedtls/ecp.h"
 
+/*
+ * Curve modulus types
+ */
+typedef enum {
+    MBEDTLS_ECP_MOD_NONE = 0,
+    MBEDTLS_ECP_MOD_COORDINATE,
+    MBEDTLS_ECP_MOD_SCALAR
+} mbedtls_ecp_modulus_type;
+
+typedef enum {
+    MBEDTLS_ECP_VARIANT_NONE = 0,
+    MBEDTLS_ECP_VARIANT_WITH_MPI_STRUCT,
+    MBEDTLS_ECP_VARIANT_WITH_MPI_UINT
+} mbedtls_ecp_variant;
+
 #if defined(MBEDTLS_TEST_HOOKS) && defined(MBEDTLS_ECP_LIGHT)
+
+/** Queries the ecp variant.
+ *
+ * \return  The id of the ecp variant.
+ */
+MBEDTLS_STATIC_TESTABLE
+mbedtls_ecp_variant mbedtls_ecp_get_variant(void);
 
 #if defined(MBEDTLS_ECP_MONTGOMERY_ENABLED)
 /** Generate a private key on a Montgomery curve (Curve25519 or Curve448).
@@ -264,8 +274,27 @@ int mbedtls_ecp_mod_p255_raw(mbedtls_mpi_uint *X, size_t X_limbs);
 
 #if defined(MBEDTLS_ECP_DP_CURVE448_ENABLED)
 
+/** Fast quasi-reduction modulo p448 = 2^448 - 2^224 - 1
+ * Write X as A0 + 2^448 A1 and A1 as B0 + 2^224 B1, and return A0 + A1 + B1 +
+ * (B0 + B1) * 2^224.
+ *
+ * \param[in,out]   X       The address of the MPI to be converted.
+ *                          Must have exact limb size that stores a 896-bit MPI
+ *                          (double the bitlength of the modulus). Upon return
+ *                          holds the reduced value which is in range `0 <= X <
+ *                          N` (where N is the modulus). The bitlength of the
+ *                          reduced value is the same as that of the modulus
+ *                          (448 bits).
+ * \param[in]       X_limbs The length of \p X in limbs.
+ *
+ * \return          \c 0 on Success.
+ * \return          #MBEDTLS_ERR_ECP_BAD_INPUT_DATA if \p X does not have
+ *                  twice as many limbs as the modulus.
+ * \return          #MBEDTLS_ERR_ECP_ALLOC_FAILED if memory allocation
+ *                  failed.
+ */
 MBEDTLS_STATIC_TESTABLE
-int mbedtls_ecp_mod_p448(mbedtls_mpi_uint *X, size_t X_limbs);
+int mbedtls_ecp_mod_p448_raw(mbedtls_mpi_uint *X, size_t X_limbs);
 
 #endif /* MBEDTLS_ECP_DP_CURVE448_ENABLED */
 
@@ -278,7 +307,7 @@ int mbedtls_ecp_mod_p448(mbedtls_mpi_uint *X, size_t X_limbs);
  * \param[in,out] N The address of the modulus structure to populate.
  *                  Must be initialized.
  * \param[in] id    The mbedtls_ecp_group_id for which to initialise the modulus.
- * \param[in] ctype The mbedtls_ecp_curve_type identifier for a coordinate modulus (P)
+ * \param[in] ctype The mbedtls_ecp_modulus_type identifier for a coordinate modulus (P)
  *                  or a scalar modulus (N).
  *
  * \return          \c 0 if successful.
@@ -289,7 +318,7 @@ int mbedtls_ecp_mod_p448(mbedtls_mpi_uint *X, size_t X_limbs);
 MBEDTLS_STATIC_TESTABLE
 int mbedtls_ecp_modulus_setup(mbedtls_mpi_mod_modulus *N,
                               const mbedtls_ecp_group_id id,
-                              const mbedtls_ecp_curve_type ctype);
+                              const mbedtls_ecp_modulus_type ctype);
 
 #endif /* MBEDTLS_TEST_HOOKS && MBEDTLS_ECP_C */
 
